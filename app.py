@@ -1,30 +1,32 @@
 import matplotlib
 matplotlib.use('Agg')
-from flask import Flask, request, jsonify, render_template
+from flask import Flask, request, jsonify, render_template, send_file
 import pandas as pd
 from transformers import pipeline
 import sqlite3
-from datetime import datetime
+from datetime import datetime, timedelta
 import matplotlib.pyplot as plt
 import seaborn as sns
 import base64
 from io import BytesIO
+import numpy as np
 from wordcloud import WordCloud
+from collections import Counter
 import re
 import os
-from textblob import TextBlob
+import random
 
 app = Flask(__name__)
 
 # Initialize sentiment analyzer
 try:
     sentiment_analyzer = pipeline("sentiment-analysis", 
-                                model="cardiffnlp/twitter-roberta-base-sentiment-latest")
-    print("Using 3-class sentiment model from Hugging Face")
+                                model="distilbert-base-uncased-finetuned-sst-2-english")
+    print("Using Hugging Face transformers")
 except Exception as e:
     print(f"Could not load transformers: {e}")
+    from textblob import TextBlob
     print("Falling back to TextBlob")
-    sentiment_analyzer = None
 
 # Database setup
 def init_db():
@@ -49,20 +51,17 @@ def clean_text(text):
 
 def analyze_sentiment(text):
     try:
-        if sentiment_analyzer is not None:
+        if 'sentiment_analyzer' in globals():
             result = sentiment_analyzer(text)[0]
-            if result['label'] == 'neutral':
-                return "NEUTRAL", 0
-            elif result['label'] == 'positive':
-                return "POSITIVE", result['score']
-            else:
-                return "NEGATIVE", -result['score']
+            if 0.4 <= result['score'] <= 0.6:
+                return "NEUTRAL", result['score']
+            return result['label'], result['score'] if result['label'] == 'POSITIVE' else -result['score']
         else:
             analysis = TextBlob(text)
             polarity = analysis.sentiment.polarity
-            if polarity > 0.3:
+            if polarity > 0.15:
                 return "POSITIVE", polarity
-            elif polarity < -0.3:
+            elif polarity < -0.15:
                 return "NEGATIVE", polarity
             else:
                 return "NEUTRAL", polarity
@@ -73,7 +72,7 @@ def analyze_sentiment(text):
 def detect_aspects(text):
     aspects = []
     text = clean_text(text)
-    common_aspects = ['battery', 'camera', 'screen', 'performance', 'price', 'quality', 'delivery', 'service']
+    common_aspects = ['battery', 'camera', 'screen', 'performance', 'price', 'quality', 'delivery']
     for aspect in common_aspects:
         if aspect in text:
             aspects.append(aspect)
@@ -102,13 +101,15 @@ def generate_sentiment_chart(results):
     plt.switch_backend('Agg')
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 6))
     
+    # Bar chart
     sns.barplot(x=sentiment_counts.index, y=sentiment_counts.values, ax=ax1, 
-                palette={'POSITIVE': 'green', 'NEUTRAL': 'gray', 'NEGATIVE': 'red'})
+                palette={'POSITIVE': 'green', 'NEUTRAL': 'orange', 'NEGATIVE': 'red'})
     ax1.set_title('Sentiment Distribution (Count)')
     ax1.set_xlabel('Sentiment')
     ax1.set_ylabel('Number of Reviews')
     
-    colors = ['green', 'gray', 'red']
+    # Pie chart
+    colors = ['green', 'orange', 'red']
     ax2.pie(sentiment_counts, labels=sentiment_counts.index, autopct='%1.1f%%',
             colors=colors, startangle=90)
     ax2.set_title('Sentiment Distribution (%)')
@@ -157,6 +158,7 @@ def generate_aspect_analysis(results):
 def generate_trend_analysis():
     try:
         with sqlite3.connect('reviews.db') as conn:
+            # Get data with proper date handling
             df = pd.read_sql("""
                 SELECT 
                     date(timestamp) as date,
@@ -168,21 +170,26 @@ def generate_trend_analysis():
             """, conn)
         
         if not df.empty:
+            # Convert date string to datetime
             df['date'] = pd.to_datetime(df['date'])
             
+            # Group by date and sentiment
             daily_trends = df.groupby(['date', 'sentiment']).agg({
                 'polarity': 'mean'
             }).unstack()
             
+            # Flatten the multi-index columns
             daily_trends.columns = daily_trends.columns.droplevel(0)
             
+            # Fill missing dates with NaN
             all_dates = pd.date_range(df['date'].min(), df['date'].max())
             daily_trends = daily_trends.reindex(all_dates)
             
+            # Plotting
             plt.switch_backend('Agg')
             fig, ax = plt.subplots(figsize=(12, 6))
             
-            colors = {'POSITIVE': 'green', 'NEUTRAL': 'gray', 'NEGATIVE': 'red'}
+            colors = {'POSITIVE': 'green', 'NEUTRAL': 'orange', 'NEGATIVE': 'red'}
             for sentiment in daily_trends.columns:
                 if sentiment in colors:
                     daily_trends[sentiment].plot(
@@ -202,6 +209,7 @@ def generate_trend_analysis():
             plt.grid(True, alpha=0.3)
             plt.tight_layout()
             
+            # Save to buffer
             buf = BytesIO()
             plt.savefig(buf, format='png', dpi=100)
             plt.close(fig)
@@ -238,6 +246,7 @@ def analyze():
             os.remove(filepath)
             return jsonify({"error": "CSV must contain a 'review' column"}), 400
         
+        # Handle date column
         date_col = None
         for col in ['date', 'timestamp', 'time', 'created_at', 'review_date']:
             if col in df.columns:
@@ -246,8 +255,10 @@ def analyze():
         
         if date_col:
             df['date'] = pd.to_datetime(df[date_col], errors='coerce')
+            # Drop rows with invalid dates
             df = df.dropna(subset=['date'])
         else:
+            # If no date column, use current time for all reviews
             df['date'] = datetime.now()
         
         if df.empty:
@@ -263,6 +274,7 @@ def analyze():
                 aspect = detect_aspects(review_text)
                 review_date = row['date']
                 
+                # Store date in ISO format
                 timestamp = review_date.isoformat()
                 
                 c.execute("""INSERT INTO reviews 
@@ -300,6 +312,73 @@ def analyze():
             os.remove(filepath)
         return jsonify({"error": str(e)}), 500
 
+@app.route('/generate-sample', methods=['GET'])
+def generate_sample():
+    try:
+        # Generate sample data with realistic dates
+        positive_reviews = [
+            "Great product, works perfectly!",
+            "Excellent quality and fast delivery",
+            "Very satisfied with my purchase"
+        ]
+        neutral_reviews = [
+            "It's okay, nothing special",
+            "Product works as expected"
+        ]
+        negative_reviews = [
+            "Poor quality, broke after 2 days",
+            "Not worth the money"
+        ]
+        aspects = ['battery', 'camera', 'screen', 'performance']
+        
+        # Generate dates spread over 3 months
+        end_date = datetime.now()
+        start_date = end_date - timedelta(days=90)
+        date_list = [start_date + timedelta(days=x) for x in range(0, 90, 5)]  # Every 5 days
+        
+        reviews = []
+        for i, date in enumerate(date_list[:20]):  # Generate 20 reviews
+            sentiment_choice = random.random()
+            if sentiment_choice < 0.6:
+                review = random.choice(positive_reviews)
+                sentiment = "POSITIVE"
+            elif sentiment_choice < 0.8:
+                review = random.choice(neutral_reviews)
+                sentiment = "NEUTRAL"
+            else:
+                review = random.choice(negative_reviews)
+                sentiment = "NEGATIVE"
+            
+            aspect = random.choice(aspects)
+            review = f"{aspect}: {review}"
+            
+            reviews.append({
+                'date': date.strftime('%Y-%m-%d'),
+                'review': review,
+                'sentiment': sentiment,
+                'aspect': aspect
+            })
+        
+        # Create CSV
+        df = pd.DataFrame(reviews)
+        csv_path = os.path.join('uploads', 'sample_reviews_with_dates.csv')
+        df.to_csv(csv_path, index=False)
+        
+        return jsonify({
+            "message": "Sample CSV with dates generated successfully",
+            "path": csv_path,
+            "download_url": f"/download-sample?path={csv_path}"
+        })
+    except Exception as e:
+        return jsonify({"error": str(e)}), 500
+
+@app.route('/download-sample')
+def download_sample():
+    path = request.args.get('path')
+    if not path or not os.path.exists(path):
+        return "File not found", 404
+    return send_file(path, as_attachment=True)
+
 @app.route('/debug-db')
 def debug_db():
     with sqlite3.connect('reviews.db') as conn:
@@ -319,5 +398,4 @@ def debug_db():
     })
 
 if __name__ == '__main__':
-    port = int(os.environ.get("PORT", 10000))  # ← Render uses $PORT
-    app.run(host='0.0.0.0', port=port)
+    app.run(debug=True)
