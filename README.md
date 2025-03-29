@@ -23,19 +23,9 @@ An automated system that analyzes customer product reviews to determine sentimen
 |-------------------|-------------|
 | Machine Learning  | Scikit-Learn, Transformers |
 | NLP Processing    | NLTK, SpaCy, TextBlob |
-| Backend          | Flask/FastAPI |
+| Backend          | Flask |
 | Data Handling    | Pandas, NumPy |
 | Visualization    | Matplotlib, Seaborn |
-| Deployment       | Streamlit, Render |
 
-## 🚀 Getting Started
 
-### Prerequisites
-- Python 3.7+
-- pip package manager
 
-### Installation
-1. Clone the repository:
-```bash
-git clone https://github.com/yourusername/sentiment-analysis-system.git
-cd sentiment-analysis-system
