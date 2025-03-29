@@ -1,0 +1,15 @@
+# Python virtual environments
+sentiment_env/
+.venv/
+venv/
+ENV/
+
+# Python cache files
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+
+# Logs and builds
+*.log
+*.egg-info/
