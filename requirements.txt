@@ -8,4 +8,5 @@ wordcloud
 python-dotenv
 gunicorn
 textblob==0.15.3  
-nltk==3.8.1       
+nltk==3.8.1  
+     
