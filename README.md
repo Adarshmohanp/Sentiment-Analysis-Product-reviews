@@ -28,4 +28,27 @@ An automated system that analyzes customer product reviews to determine sentimen
 | Visualization    | Matplotlib, Seaborn |
 
 
+### Requirements
+## How to Set Up
+
+1. Create virtual environment:
+   ```bash
+   python -m venv sentiment_env
+   ```
+
+2. Activate it:
+   - **Windows**:
+     ```cmd
+     sentiment_env\Scripts\activate
+     ```
+   - **Mac/Linux**:
+     ```bash
+     source sentiment_env/bin/activate
+     ```
+
+3. Install packages:
+   ```bash
+   pip install -r requirements.txt
+   ```
+
 
