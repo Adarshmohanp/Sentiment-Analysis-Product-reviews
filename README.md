@@ -28,7 +28,7 @@ An automated system that analyzes customer product reviews to determine sentimen
 | Visualization    | Matplotlib, Seaborn |
 
 
-### Requirements
+
 ## How to Set Up
 
 1. Create virtual environment:
