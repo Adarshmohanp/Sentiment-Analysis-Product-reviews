@@ -1,0 +1,9 @@
+flask
+pandas
+transformers
+torch
+matplotlib
+seaborn
+wordcloud
+python-dotenv
+gunicorn
